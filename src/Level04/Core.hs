@@ -9,6 +9,7 @@ where
 
 import Control.Applicative (liftA2)
 import Control.Monad (join)
+import Data.Bifunctor
 import qualified Data.ByteString.Lazy.Char8 as LBS
 import Data.Either
   ( Either (Left, Right),
@@ -19,12 +20,14 @@ import Data.Text (Text)
 import Data.Text.Encoding (decodeUtf8)
 import Data.Text.Lazy.Encoding (encodeUtf8)
 import Database.SQLite.SimpleErrors.Types (SQLiteResponse)
-import Level04.Conf (Conf, firstAppConfig)
+import Level04.Conf (Conf, dbFilePath, firstAppConfig)
 import qualified Level04.DB as DB
 import Level04.Types
   ( ContentType (JSON, PlainText),
-    Error (EmptyCommentText, EmptyTopic, UnknownRoute),
+    Error (..),
     RqType (AddRq, ListRq, ViewRq),
+    encodeComment,
+    encodeTopic,
     mkCommentText,
     mkTopic,
     renderContentType,
@@ -58,7 +61,13 @@ data StartUpError
   deriving (Show)
 
 runApp :: IO ()
-runApp = error "runApp needs re-implementing"
+runApp = do
+  prepE <- prepareAppReqs
+  case prepE of
+    Left err -> error (show err)
+    Right db -> do
+      run 3000 $ app db
+      DB.closeDB db
 
 -- We need to complete the following steps to prepare our app requirements:
 --
@@ -69,8 +78,9 @@ runApp = error "runApp needs re-implementing"
 --
 prepareAppReqs ::
   IO (Either StartUpError DB.FirstAppDB)
-prepareAppReqs =
-  error "prepareAppReqs not implemented"
+prepareAppReqs = do
+  respE <- DB.initDB (dbFilePath firstAppConfig)
+  return $ first DBInitErr respE
 
 -- | Some helper functions to make our lives a little more DRY.
 mkResponse ::
@@ -147,12 +157,15 @@ handleRequest ::
   DB.FirstAppDB ->
   RqType ->
   IO (Either Error Response)
-handleRequest _db (AddRq _ _) =
-  (resp200 PlainText "Success" <$) <$> error "AddRq handler not implemented"
-handleRequest _db (ViewRq _) =
-  error "ViewRq handler not implemented"
-handleRequest _db ListRq =
-  error "ListRq handler not implemented"
+handleRequest _db (AddRq topic commentText) = do
+  respE <- DB.addCommentToTopic _db topic commentText
+  return $ second (const $ resp200 PlainText "Success") respE
+handleRequest _db (ViewRq topic) = do
+  respE <- DB.getComments _db topic
+  return $ second (resp200Json (E.list encodeComment)) respE
+handleRequest _db ListRq = do
+  respE <- DB.getTopics _db
+  return $ second (resp200Json (E.list encodeTopic)) respE
 
 mkRequest ::
   Request ->
@@ -197,3 +210,5 @@ mkErrorResponse EmptyCommentText =
   resp400 PlainText "Empty Comment"
 mkErrorResponse EmptyTopic =
   resp400 PlainText "Empty Topic"
+mkErrorResponse (SqliteError resp) =
+  resp400 PlainText (LBS.concat ["Database error: [", LBS.pack (show resp), "]"])

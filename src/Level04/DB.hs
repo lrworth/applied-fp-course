@@ -1,4 +1,5 @@
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 {-# OPTIONS_GHC -fno-warn-unused-matches #-}
 
 module Level04.DB
@@ -12,6 +13,7 @@ module Level04.DB
   )
 where
 
+import Data.Bifunctor (second)
 import Data.Text (Text)
 import qualified Data.Text as Text
 import Data.Time (getCurrentTime)
@@ -22,8 +24,12 @@ import Database.SQLite.SimpleErrors.Types (SQLiteResponse)
 import Level04.Types
   ( Comment,
     CommentText,
-    Error,
+    Error (..),
     Topic,
+    fromDBComment,
+    getCommentText,
+    getTopic,
+    mkTopic,
   )
 
 -- ------------------------------------------------------------------------------|
@@ -47,7 +53,7 @@ closeDB ::
   FirstAppDB ->
   IO ()
 closeDB =
-  error "closeDB not implemented"
+  Sql.close . dbConn
 
 -- Given a `FilePath` to our SQLite DB file, initialise the database and ensure
 -- our Table is there by running a query to create it, if it doesn't exist
@@ -55,8 +61,10 @@ closeDB =
 initDB ::
   FilePath ->
   IO (Either SQLiteResponse FirstAppDB)
-initDB fp =
-  error "initDB not implemented (use Sql.runDBAction to catch exceptions)"
+initDB fp = do
+  conn <- Sql.open fp
+  respE <- Sql.runDBAction $ Sql.execute_ conn createTableQ
+  return $ second (const $ FirstAppDB conn) respE
   where
     -- Query has an `IsString` instance so string literals like this can be
     -- converted into a `Query` type when the `OverloadedStrings` language
@@ -77,35 +85,51 @@ getComments ::
   FirstAppDB ->
   Topic ->
   IO (Either Error [Comment])
-getComments =
+getComments db topic =
   let sql = "SELECT id,topic,comment,time FROM comments WHERE topic = ?"
    in -- There are several possible implementations of this function. Particularly
       -- there may be a trade-off between deciding to throw an Error if a DBComment
       -- cannot be converted to a Comment, or simply ignoring any DBComment that is
       -- not valid.
-
-      error "getComments not implemented (use Sql.runDBAction to catch exceptions)"
+      do
+        respE <- Sql.runDBAction $ Sql.query (dbConn db) sql (Sql.Only (getTopic topic))
+        case respE of
+          Left sqliteError -> return $ Left $ SqliteError sqliteError
+          Right dbComments -> return $ traverse fromDBComment dbComments
 
 addCommentToTopic ::
   FirstAppDB ->
   Topic ->
   CommentText ->
   IO (Either Error ())
-addCommentToTopic =
+addCommentToTopic db topic commentText =
   let sql = "INSERT INTO comments (topic,comment,time) VALUES (?,?,?)"
-   in error "addCommentToTopic not implemented (use Sql.runDBAction to catch exceptions)"
+   in do
+        time <- getCurrentTime
+        respE <- Sql.runDBAction $ Sql.execute (dbConn db) sql (getTopic topic, getCommentText commentText, time)
+        case respE of
+          Left sqliteError -> return . Left $ SqliteError sqliteError
+          Right () -> return . Right $ ()
 
 getTopics ::
   FirstAppDB ->
   IO (Either Error [Topic])
-getTopics =
+getTopics db =
   let sql = "SELECT DISTINCT topic FROM comments"
-   in error "getTopics not implemented (use Sql.runDBAction to catch exceptions)"
+   in do
+        respE <- Sql.runDBAction $ Sql.query_ (dbConn db) sql
+        case respE of
+          Left sqliteError -> return $ Left $ SqliteError sqliteError
+          Right dbTopics -> return $ traverse (mkTopic . Sql.fromOnly) dbTopics
 
 deleteTopic ::
   FirstAppDB ->
   Topic ->
   IO (Either Error ())
-deleteTopic =
+deleteTopic db topic =
   let sql = "DELETE FROM comments WHERE topic = ?"
-   in error "deleteTopic not implemented (use Sql.runDBAction to catch exceptions)"
+   in do
+        respE <- Sql.runDBAction $ Sql.execute (dbConn db) sql (Sql.Only (getTopic topic))
+        case respE of
+          Left sqliteError -> return . Left $ SqliteError sqliteError
+          Right () -> return . Right $ ()

@@ -1,3 +1,4 @@
+{-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# OPTIONS_GHC -fno-warn-unused-matches #-}
 
@@ -22,19 +23,22 @@ import Database.SQLite.SimpleErrors.Types (SQLiteResponse)
 import Level06.AppM
   ( App,
     AppM (..),
+    hoistToAppM,
     liftEither,
     runApp,
   )
 import qualified Level06.Conf as Conf
 import qualified Level06.DB as DB
 import Level06.Types
-  ( Conf,
+  ( Conf (..),
     ConfigError,
     ContentType (..),
     Error (..),
     RqType (AddRq, ListRq, ViewRq),
     encodeComment,
     encodeTopic,
+    getDBFilePath,
+    getPort,
     mkCommentText,
     mkTopic,
     renderContentType,
@@ -69,7 +73,16 @@ data StartUpError
   deriving (Show)
 
 runApplication :: IO ()
-runApplication = error "copy your previous 'runApp' implementation and refactor as needed"
+runApplication = do
+  result <- runAppM $ do
+    -- Load our configuration
+    (cfg, firstAppDb) <- prepareAppReqs
+    -- We have a valid config! We can now complete the various pieces needed to run our
+    -- application. This function 'finally' will execute the first 'IO a', and then, even in the
+    -- case of that value throwing an exception, execute the second 'IO b'. We do this to ensure
+    -- that our DB connection will always be closed when the application finishes, or crashes.
+    liftIO $ Ex.finally (run (fromEnum $ getPort $ cPort cfg) $ app cfg firstAppDb) (DB.closeDB firstAppDb)
+  either (\e -> putStrLn "You done messed up A-A-Ron!" >> print e) return result
 
 -- | We need to complete the following steps to prepare our app requirements:
 --
@@ -83,7 +96,15 @@ runApplication = error "copy your previous 'runApp' implementation and refactor 
 -- our generalised AppM to also remove the problem of handling errors on start
 -- up!
 prepareAppReqs :: AppM StartUpError (Conf, DB.FirstAppDB)
-prepareAppReqs = error "copy your prepareAppReqs from the previous level."
+prepareAppReqs = do
+  conf <- first ConfErr $ Conf.parseOptions "files/appconfig.json"
+  db <- first DBInitErr $ hoistToAppM $ DB.initDB (getDBFilePath $ cDBFilePath conf)
+  pure (conf, db)
+
+{-do
+  respE <- DB.initDB _ -- (Conf.dbFilePath Conf.firstAppConfig)
+  return $ first DBInitErr respE
+  -}
 
 -- | Some helper functions to make our lives a little more DRY.
 mkResponse ::
@@ -136,7 +157,7 @@ app ::
   DB.FirstAppDB ->
   Application
 app cfg db rq cb =
-  runApp (handleRequest db =<< mkRequest rq) >>= cb . handleRespErr
+  cb . handleRespErr =<< runApp (handleRequest db =<< mkRequest rq)
   where
     handleRespErr :: Either Error Response -> Response
     handleRespErr = either mkErrorResponse id

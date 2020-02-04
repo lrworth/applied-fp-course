@@ -6,4 +6,4 @@ import qualified Level01.Core as Core
 -- executable. So our ``exe/Main.hs`` is a straightforward and unremarkable
 -- affair.
 main :: IO ()
-main = Core.runApp
+main = print "hello" >> Core.runApp

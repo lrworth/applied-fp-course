@@ -58,6 +58,4 @@ getTopic (Topic t) =
 -- functions. There is a quick introduction to `Contravariant` in the `README`
 -- for this level.
 encodeTopic :: Applicative f => Encoder f Topic
-encodeTopic =
-  -- Try using 'contramap' and 'E.text'
-  error "topic JSON encoder not implemented"
+encodeTopic = contramap getTopic E.text

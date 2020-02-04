@@ -2,6 +2,7 @@ module Level04.Types.CommentText
   ( CommentText,
     mkCommentText,
     getCommentText,
+    encodeCommentText,
   )
 where
 
@@ -53,6 +54,4 @@ getCommentText (CommentText t) =
 -- functions. There is a quick introduction to `Contravariant` in the `README`
 -- for this level.
 encodeCommentText :: Applicative f => Encoder f CommentText
-encodeCommentText =
-  -- Try using 'contramap' and 'E.text'.
-  error "CommentText JSON encoder not implemented"
+encodeCommentText = contramap getCommentText E.text

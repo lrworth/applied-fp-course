@@ -1,19 +1,24 @@
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 
 module Level06.Conf.File where
 
-import Control.Exception (try)
+import Control.Exception (IOException, try)
+import Control.Monad ((<=<))
+import Control.Monad.IO.Class (MonadIO (..))
 import qualified Data.Attoparsec.ByteString as AB
 import Data.Bifunctor (first)
-import Data.ByteString (ByteString)
+import Data.ByteString.Char8 as BS (ByteString, pack)
 import Data.Monoid (Last (Last))
 import Data.Text (Text, pack)
-import Level06.AppM (AppM (runAppM))
+import Level06.AppM (AppM (runAppM), liftEither)
 import Level06.Types
-  ( ConfigError (BadConfFile),
+  ( ConfigError (..),
     PartialConf (PartialConf),
+    partialConfDecoder,
   )
 import Waargonaut (Json)
+import Waargonaut.Attoparsec (pureDecodeAttoparsecByteString)
 import qualified Waargonaut.Decode as D
 import Waargonaut.Decode.Error (DecodeError (ParseFailed))
 
@@ -32,21 +37,17 @@ import Waargonaut.Decode.Error (DecodeError (ParseFailed))
 readConfFile ::
   FilePath ->
   AppM ConfigError ByteString
-readConfFile =
-  -- Reading a file may throw an exception for any number of
-  -- reasons. Use the 'try' function from 'Control.Exception' to catch
-  -- the exception and turn it into an error value that is thrown as
-  -- part of our 'AppM' transformer.
-  --
-  -- No exceptions from reading the file should escape this function.
-  --
-  error "readConfFile not implemented"
+readConfFile fp = liftEither =<< liftIO (first (\(_ :: IOException) -> NonexistentConfFile) <$> try (BS.pack <$> readFile fp))
 
 -- | Construct the function that will take a ``FilePath``, read it in, decode it,
 -- and construct our ``PartialConf``.
 parseJSONConfigFile ::
   FilePath ->
   AppM ConfigError PartialConf
-parseJSONConfigFile =
-  error "parseJSONConfigFile not implemented"
+parseJSONConfigFile = liftEither . parseConfFile <=< readConfFile
+  where
+    parseConfFile :: ByteString -> Either ConfigError PartialConf
+    parseConfFile =
+      first (BadConfFile . fst)
+        . pureDecodeAttoparsecByteString partialConfDecoder
 -- Go to 'src/Level06/Conf.hs' next.

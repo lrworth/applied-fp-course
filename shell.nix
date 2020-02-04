@@ -22,6 +22,12 @@ let
 
         # 'ghcid' auto reloading tool
         pkgs.haskellPackages.ghcid
+
+        # hoogle for documentation
+        pkgs.haskellPackages.hoogle
+
+        # hasktags for navigation
+        pkgs.haskellPackages.hasktags
       ]
     # We don't want nix to build the thing, we want the environment so we can
     # build the thing.
